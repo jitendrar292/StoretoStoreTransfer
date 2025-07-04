@@ -115,8 +115,10 @@ def upload_inventory():
         st.success("Inventory and sales data uploaded & merged successfully.")
         st.dataframe(merged_df)
 
+
 def dashboard():
     st.subheader("Dashboard")
+
     if st.session_state.inventory_data.empty:
         st.info("Waiting for inventory upload from manager.")
         if st.session_state.transfer_requests:
@@ -125,16 +127,19 @@ def dashboard():
             status_counts = df_transfers['Status'].value_counts()
             st.bar_chart(status_counts)
         return
-        st.warning("Upload inventory data first.")
-        return
-    st.write("### Inventory Overview")
-    st.dataframe(st.session_state.inventory_data)
 
-    # Show status counts
+    # Filter inventory by logged-in store
+    df = st.session_state.inventory_data
+    if st.session_state.user_store:
+        df = df[df["Store"] == st.session_state.user_store]
+
+    st.write("### Inventory Overview")
+    st.dataframe(df)
+
     if st.session_state.transfer_requests:
         df_transfers = pd.DataFrame(st.session_state.transfer_requests)
-        status_counts = df_transfers['Status'].value_counts()
         st.write("### Transfer Request Status Summary")
+        status_counts = df_transfers['Status'].value_counts()
         st.bar_chart(status_counts)
 
 def transfer_suggestions():
