@@ -130,7 +130,7 @@ def transfer_suggestions():
             st.markdown(f"**{row['SKU']}**: {row['Qty']} units from {row['From']} → {row['To']}")
             if st.button(f"Transfer {row['SKU']} to {row['To']}", key=row['SKU'] + str(i)):
                 st.session_state.suggested_transfer = row.to_dict()
-                st.query_params["page"] = "Submit Transfer"
+                st.query_params["page"] = ["Submit Transfer"]  # ✅ Must be a list
                 st.rerun()
     else:
         st.info("No smart suggestions available.")
