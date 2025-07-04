@@ -242,11 +242,21 @@ def receive_inventory():
 
     if st.button("Mark as Received"):
         updated = False
+
+        # Ensure inventory_data is properly structured
+        if st.session_state.inventory_data.empty:
+            st.session_state.inventory_data = pd.DataFrame(columns=["Store", "SKU", "Product", "Stock Qty", "Sales Last Week"])
+
         for r in approved:
             r["Status"] = "Received"
             df_inv = st.session_state.inventory_data
 
-            match = (df_inv["Store"] == r["To"]) & (df_inv["SKU"] == r["SKU"])
+            try:
+                match = (df_inv["Store"] == r["To"]) & (df_inv["SKU"] == r["SKU"])
+            except KeyError:
+                st.error("Inventory data is missing required columns. Please re-upload inventory.")
+                return
+
             if match.any():
                 st.session_state.inventory_data.loc[match, "Stock Qty"] += int(r["Qty"])
             else:
