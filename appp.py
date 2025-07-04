@@ -227,45 +227,46 @@ def approvals():
 
 def receive_inventory():
     st.subheader("Receive Inventory")
+
     approved = [
-    r for r in st.session_state.transfer_requests
-    if r["Status"] == "Approved" and r["To"] == st.session_state.user_store
+        r for r in st.session_state.transfer_requests
+        if r["Status"] == "Approved" and r["To"] == st.session_state.user_store
     ]
 
     if not approved:
-        st.info("No approved transfers.")
+        st.info("No approved transfers for your store.")
         return
+
     df = pd.DataFrame(approved)
     st.dataframe(df)
+
     if st.button("Mark as Received"):
-        for r in st.session_state.transfer_requests:
-            if r["Status"] == "Approved" and r["To"] == st.session_state.user_store:
-                r["Status"] = "Received"
-                # Update inventory if store matches
-                match = (st.session_state.inventory_data["Store"] == r["To"]) & (st.session_state.inventory_data["SKU"] == r["SKU"])
-                if match.any():
-                    st.session_state.inventory_data.loc[match, "Stock Qty"] += int(r["Qty"])
-                else:
-                    # Add new row if SKU not found in inventory
-                    st.session_state.inventory_data = pd.concat([
-                        st.session_state.inventory_data,
-                        pd.DataFrame([{
-                            "Store": r["To"],
-                            "SKU": r["SKU"],
-                            "Product": r["Product"],
-                            "Stock Qty": int(r["Qty"]),
-                            "Sales Last Week": 0
-                        }])
-                    ], ignore_index=True)
-        save_transfer_requests()
-        st.success("Received inventory updated.")
-        st.rerun()
-        for r in st.session_state.transfer_requests:
-            if r["Status"] == "Approved":
-                r["Status"] = "Received"
-        save_transfer_requests()
-        st.success("All approved transfers marked as received.")
-        st.rerun()
+        updated = False
+        for r in approved:
+            r["Status"] = "Received"
+            df_inv = st.session_state.inventory_data
+
+            match = (df_inv["Store"] == r["To"]) & (df_inv["SKU"] == r["SKU"])
+            if match.any():
+                st.session_state.inventory_data.loc[match, "Stock Qty"] += int(r["Qty"])
+            else:
+                new_row = {
+                    "Store": r["To"],
+                    "SKU": r["SKU"],
+                    "Product": r["Product"],
+                    "Stock Qty": int(r["Qty"]),
+                    "Sales Last Week": 0
+                }
+                st.session_state.inventory_data = pd.concat(
+                    [df_inv, pd.DataFrame([new_row])],
+                    ignore_index=True
+                )
+            updated = True
+
+        if updated:
+            save_transfer_requests()
+            st.success("Inventory updated for received transfers.")
+            st.rerun()
 
 if not st.session_state.logged_in:
     login()
