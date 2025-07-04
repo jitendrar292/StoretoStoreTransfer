@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import os
+from datetime import datetime
 
 # -------------------------------
 # File to store persistent transfer requests
@@ -54,7 +55,7 @@ def sidebar():
     with st.sidebar:
         st.image("https://upload.wikimedia.org/wikipedia/commons/2/20/Adidas_Logo.svg", width=100)
         st.markdown(f"**Role:** {st.session_state.role}")
-        return st.radio("Navigate", [
+        nav = st.radio("Navigate", [
             "Dashboard",
             "Manage Inventory",
             "Submit Transfer",
@@ -62,6 +63,11 @@ def sidebar():
             "Receive Inventory",
             "Upload CSV"
         ])
+        if st.button("Logout 🔓"):
+            st.session_state.logged_in = False
+            st.session_state.role = None
+            st.rerun()
+        return nav
 
 # -------------------------------
 # Dashboard
@@ -83,7 +89,7 @@ def dashboard():
     st.altair_chart(chart)
 
     if st.session_state.transfer_requests:
-        st.write("### Transfer Requests")
+        st.write("### All Transfer Requests")
         df_requests = pd.DataFrame(st.session_state.transfer_requests)
         st.dataframe(df_requests)
 
@@ -113,7 +119,8 @@ def submit_transfer():
             "Quantity": qty,
             "From": from_loc,
             "To": to_loc,
-            "Status": "Pending"
+            "Status": "Pending",
+            "Submitted At": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         st.session_state.transfer_requests.append(request)
         save_transfer_requests()
@@ -125,36 +132,66 @@ def approvals():
     st.subheader("Transfer Approvals")
 
     if not st.session_state.transfer_requests:
-        st.info("No pending approvals.")
+        st.info("No transfer requests found.")
         return
 
-    for i, req in enumerate(st.session_state.transfer_requests):
-        if req["Status"] == "Pending":
-            with st.expander(f"Request {i+1}: {req['SKU']} - {req['Quantity']} units"):
-                st.write(f"**SKU**: {req['SKU']}")
-                st.write(f"**Quantity**: {req['Quantity']}")
-                st.write(f"**From**: {req['From']}")
-                st.write(f"**To**: {req['To']}")
+    df = pd.DataFrame([r for r in st.session_state.transfer_requests if r["Status"] != "Received"])
+
+    # Pending Requests
+    pending = df[df["Status"] == "Pending"]
+    if not pending.empty:
+        st.write("### ⏳ Pending Requests")
+        for i, req in pending.iterrows():
+            with st.expander(f"{req['SKU']} - {req['Quantity']} units from {req['From']} to {req['To']}"):
+                st.write(f"**Submitted At:** {req['Submitted At']}")
                 col1, col2 = st.columns(2)
                 if col1.button(f"Approve Request {i+1}"):
                     st.session_state.transfer_requests[i]["Status"] = "Approved"
                     save_transfer_requests()
                     st.success(f"Request {i+1} approved.")
+                    st.rerun()
                 if col2.button(f"Deny Request {i+1}"):
                     st.session_state.transfer_requests[i]["Status"] = "Denied"
                     save_transfer_requests()
                     st.error(f"Request {i+1} denied.")
+                    st.rerun()
+    else:
+        st.info("No pending requests.")
+
+    # Approved Requests
+    approved = df[df["Status"] == "Approved"]
+    if not approved.empty:
+        st.write("### ✅ Approved Requests")
+        st.dataframe(approved)
+
+    # Denied Requests
+    denied = df[df["Status"] == "Denied"]
+    if not denied.empty:
+        st.write("### ❌ Denied Requests")
+        st.dataframe(denied)
 
 # -------------------------------
 # Receive Inventory
 def receive_inventory():
     st.subheader("Receive Inventory")
-    if st.session_state.inventory_data.empty:
-        st.warning("No inventory data loaded.")
+
+    # Filter only approved transfers
+    approved_transfers = [req for req in st.session_state.transfer_requests if req["Status"] == "Approved"]
+
+    if not approved_transfers:
+        st.info("No approved transfers available for receiving.")
         return
-    st.dataframe(st.session_state.inventory_data)
-    if st.button("Update Status"):
-        st.success("Inventory status updated.")
+
+    df = pd.DataFrame(approved_transfers)
+    st.dataframe(df)
+
+    if st.button("Mark as Received"):
+        for req in st.session_state.transfer_requests:
+            if req["Status"] == "Approved":
+                req["Status"] = "Received"
+        save_transfer_requests()
+        st.success("Approved inventory marked as received.")
+        st.rerun()
 
 # -------------------------------
 # Upload CSV
