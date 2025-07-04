@@ -227,7 +227,11 @@ def approvals():
 
 def receive_inventory():
     st.subheader("Receive Inventory")
-    approved = [r for r in st.session_state.transfer_requests if r["Status"] == "Approved"]
+    approved = [
+    r for r in st.session_state.transfer_requests
+    if r["Status"] == "Approved" and r["To"] == st.session_state.user_store
+    ]
+
     if not approved:
         st.info("No approved transfers.")
         return
