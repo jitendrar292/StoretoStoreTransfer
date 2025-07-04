@@ -64,13 +64,14 @@ def sidebar():
             "Receive Inventory"
         ]
 
-        # Get query param page
+        # Read query param or fallback to first item
         selected_page = st.query_params.get("page", [pages[0]])[0]
 
-        # Use it as default value for radio
-        nav = st.radio("Navigate", pages, index=pages.index(selected_page))
+        # Handle case when query param is not valid
+        if selected_page not in pages:
+            selected_page = pages[0]
 
-        # Keep query param in sync
+        nav = st.radio("Navigate", pages, index=pages.index(selected_page))
         st.query_params["page"] = [nav]
 
         if st.button("Logout 🔓"):
@@ -80,21 +81,15 @@ def sidebar():
 
         return nav
 
-
 def upload_inventory():
     st.subheader("Upload Inventory and Sales Data")
-
     inventory_file = st.file_uploader("Upload Inventory CSV", type="csv", key="inv")
     sales_file = st.file_uploader("Upload Sales CSV", type="csv", key="sales")
-
     if inventory_file and sales_file:
         inv_df = pd.read_csv(inventory_file)
         sales_df = pd.read_csv(sales_file)
-
-        # Merge on Store + SKU
         merged_df = pd.merge(inv_df, sales_df, on=["Store", "SKU"], how="left")
         merged_df["Sales Last Week"].fillna(0, inplace=True)
-
         st.session_state.inventory_data = merged_df
         st.success("Inventory and sales data uploaded & merged successfully.")
         st.dataframe(merged_df)
@@ -109,7 +104,6 @@ def dashboard():
 
 def transfer_suggestions():
     st.subheader("Smart Transfer Suggestions")
-
     df = st.session_state.inventory_data
     if df.empty:
         st.warning("Upload data first.")
@@ -123,7 +117,6 @@ def transfer_suggestions():
         if len(sorted_group) >= 2:
             from_store = sorted_group.iloc[0]
             to_store = sorted_group.iloc[-1]
-
             if from_store["Sales Last Week"] < to_store["Sales Last Week"]:
                 qty = min(10, from_store["Stock Qty"])
                 suggestions.append({
@@ -143,16 +136,14 @@ def transfer_suggestions():
             st.markdown(f"**{row['SKU']}**: {row['Qty']} units from {row['From']} → {row['To']}")
             if st.button(f"Transfer {row['SKU']} to {row['To']}", key=row['SKU'] + str(i)):
                 st.session_state.suggested_transfer = row.to_dict()
-                st.query_params["page"] = ["Submit Transfer"]  # ✅ Must be a list
+                st.query_params["page"] = ["Submit Transfer"]
                 st.rerun()
     else:
         st.info("No smart suggestions available.")
 
 def submit_transfer():
     st.subheader("Submit Transfer")
-
     suggested = st.session_state.get("suggested_transfer", None)
-
     sku = st.text_input("SKU", value=suggested["SKU"] if suggested else "")
     qty = st.number_input("Quantity", min_value=1, value=int(suggested["Qty"]) if suggested else 1)
     store_options = ["Store A", "Store B", "Store C"]
@@ -200,10 +191,8 @@ def receive_inventory():
     if not approved:
         st.info("No approved transfers.")
         return
-
     df = pd.DataFrame(approved)
     st.dataframe(df)
-
     if st.button("Mark as Received"):
         for r in st.session_state.transfer_requests:
             if r["Status"] == "Approved":
@@ -212,12 +201,10 @@ def receive_inventory():
         st.success("All approved transfers marked as received.")
         st.rerun()
 
-# Main App Routing
 if not st.session_state.logged_in:
     login()
 else:
     page = sidebar()
-
     if page == "Dashboard":
         dashboard()
     elif page == "Upload Inventory":
@@ -230,4 +217,3 @@ else:
         approvals()
     elif page == "Receive Inventory":
         receive_inventory()
-
