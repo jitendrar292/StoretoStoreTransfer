@@ -118,13 +118,13 @@ def upload_inventory():
 def dashboard():
     st.subheader("Dashboard")
     if st.session_state.inventory_data.empty:
-    st.info("Waiting for inventory upload from manager.")
-    if st.session_state.transfer_requests:
-        df_transfers = pd.DataFrame(st.session_state.transfer_requests)
-        st.write("### Transfer Request Status Summary")
-        status_counts = df_transfers['Status'].value_counts()
-        st.bar_chart(status_counts)
-    return
+        st.info("Waiting for inventory upload from manager.")
+        if st.session_state.transfer_requests:
+            df_transfers = pd.DataFrame(st.session_state.transfer_requests)
+            st.write("### Transfer Request Status Summary")
+            status_counts = df_transfers['Status'].value_counts()
+            st.bar_chart(status_counts)
+        return
         st.warning("Upload inventory data first.")
         return
     st.write("### Inventory Overview")
