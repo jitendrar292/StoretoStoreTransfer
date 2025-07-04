@@ -3,10 +3,10 @@ import pandas as pd
 import altair as alt
 import os
 from datetime import datetime
-import random
 
 TRANSFER_FILE = "transfer_requests.csv"
 
+# User setup
 users = {
     "storea@adidas.com": {"password": "store123", "role": "Store Manager", "store": "Store A"},
     "storeb@adidas.com": {"password": "store123", "role": "Store Manager", "store": "Store B"},
@@ -14,7 +14,7 @@ users = {
     "approver@adidas.com": {"password": "approver123", "role": "Approver"}
 }
 
-# Session Initialization
+# Session init
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'role' not in st.session_state:
@@ -28,6 +28,8 @@ if 'transfer_requests' not in st.session_state:
         st.session_state.transfer_requests = pd.read_csv(TRANSFER_FILE).to_dict('records')
     else:
         st.session_state.transfer_requests = []
+if 'suggested_transfer' not in st.session_state:
+    st.session_state.suggested_transfer = None
 
 def save_transfer_requests():
     df = pd.DataFrame(st.session_state.transfer_requests)
@@ -65,24 +67,31 @@ def sidebar():
                 del st.session_state[key]
             st.rerun()
         return nav
-def upload_inventory():
-    st.subheader("Upload Inventory CSV")
-    uploaded = st.file_uploader("Upload CSV with SKU, Product, Stock Qty, Store", type="csv")
-    if uploaded:
-        df = pd.read_csv(uploaded)
 
-        # Simulate Sales Last Week per row
-        df["Sales Last Week"] = [random.randint(5, 40) for _ in range(len(df))]
-        st.session_state.inventory_data = df
-        st.success("Inventory loaded with simulated sales data.")
-        st.dataframe(df)
+def upload_inventory():
+    st.subheader("Upload Inventory and Sales Data")
+
+    inventory_file = st.file_uploader("Upload Inventory CSV", type="csv", key="inv")
+    sales_file = st.file_uploader("Upload Sales CSV", type="csv", key="sales")
+
+    if inventory_file and sales_file:
+        inv_df = pd.read_csv(inventory_file)
+        sales_df = pd.read_csv(sales_file)
+
+        # Merge on Store + SKU
+        merged_df = pd.merge(inv_df, sales_df, on=["Store", "SKU"], how="left")
+        merged_df["Sales Last Week"].fillna(0, inplace=True)
+
+        st.session_state.inventory_data = merged_df
+        st.success("Inventory and sales data uploaded & merged successfully.")
+        st.dataframe(merged_df)
 
 def dashboard():
     st.subheader("Dashboard")
     if st.session_state.inventory_data.empty:
         st.warning("Upload inventory data first.")
         return
-    st.write("### Current Inventory")
+    st.write("### Inventory Overview")
     st.dataframe(st.session_state.inventory_data)
 
 def transfer_suggestions():
@@ -90,7 +99,7 @@ def transfer_suggestions():
 
     df = st.session_state.inventory_data
     if df.empty:
-        st.warning("Upload inventory data first.")
+        st.warning("Upload data first.")
         return
 
     sku_groups = df.groupby("SKU")
@@ -116,23 +125,26 @@ def transfer_suggestions():
 
     if suggestions:
         df_suggestions = pd.DataFrame(suggestions)
-        st.dataframe(df_suggestions)
-
-        for i, sug in enumerate(suggestions):
-            if st.button(f"Submit Suggested Transfer {i+1}"):
-                sug["Status"] = "Pending"
-                st.session_state.transfer_requests.append(sug)
-                save_transfer_requests()
-                st.success(f"Transfer from {sug['From']} to {sug['To']} submitted.")
+        st.write("### Suggested Transfers")
+        for i, row in df_suggestions.iterrows():
+            st.markdown(f"**{row['SKU']}**: {row['Qty']} units from {row['From']} → {row['To']}")
+            if st.button(f"Transfer {row['SKU']} to {row['To']}", key=row['SKU'] + str(i)):
+                st.session_state.suggested_transfer = row.to_dict()
+                st.experimental_set_query_params(page="Submit Transfer")
+                st.rerun()
     else:
-        st.info("No smart suggestions at the moment.")
+        st.info("No smart suggestions available.")
+
 def submit_transfer():
-    st.subheader("Submit Manual Transfer")
-    sku = st.text_input("SKU")
-    qty = st.number_input("Qty", min_value=1)
+    st.subheader("Submit Transfer")
+
+    suggested = st.session_state.get("suggested_transfer", None)
+
+    sku = st.text_input("SKU", value=suggested["SKU"] if suggested else "")
+    qty = st.number_input("Quantity", min_value=1, value=int(suggested["Qty"]) if suggested else 1)
     store_options = ["Store A", "Store B", "Store C"]
-    from_loc = st.selectbox("From", store_options)
-    to_loc = st.selectbox("To", store_options)
+    from_loc = st.selectbox("From", store_options, index=store_options.index(suggested["From"]) if suggested else 0)
+    to_loc = st.selectbox("To", store_options, index=store_options.index(suggested["To"]) if suggested else 1)
 
     if st.button("Submit Transfer"):
         st.session_state.transfer_requests.append({
@@ -141,16 +153,16 @@ def submit_transfer():
             "From": from_loc,
             "To": to_loc,
             "Status": "Pending",
-            "Product": "Manual Entry",
+            "Product": suggested["Product"] if suggested else "Manual Entry",
             "Submitted At": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
         save_transfer_requests()
-        st.success("Manual transfer request submitted.")
+        st.session_state.pop("suggested_transfer", None)
+        st.success(f"Transfer request for SKU {sku} submitted.")
 
 def approvals():
-    st.subheader("Approvals")
-
-    df = pd.DataFrame([r for r in st.session_state.transfer_requests if r["Status"] in ["Pending"]])
+    st.subheader("Transfer Approvals")
+    df = pd.DataFrame([r for r in st.session_state.transfer_requests if r["Status"] == "Pending"])
     if df.empty:
         st.info("No pending approvals.")
         return
@@ -158,12 +170,12 @@ def approvals():
     for i, row in df.iterrows():
         with st.expander(f"{row['SKU']} - {row['Qty']} from {row['From']} to {row['To']}"):
             col1, col2 = st.columns(2)
-            if col1.button(f"Approve {row['SKU']} [{i}]"):
+            if col1.button(f"Approve {row['SKU']} [{i}]", key=f"appr_{i}"):
                 st.session_state.transfer_requests[i]["Status"] = "Approved"
                 save_transfer_requests()
                 st.success("Approved.")
                 st.rerun()
-            if col2.button(f"Deny {row['SKU']} [{i}]"):
+            if col2.button(f"Deny {row['SKU']} [{i}]", key=f"deny_{i}"):
                 st.session_state.transfer_requests[i]["Status"] = "Denied"
                 save_transfer_requests()
                 st.error("Denied.")
@@ -171,27 +183,29 @@ def approvals():
 
 def receive_inventory():
     st.subheader("Receive Inventory")
-
     approved = [r for r in st.session_state.transfer_requests if r["Status"] == "Approved"]
     if not approved:
-        st.info("No approved transfers available.")
+        st.info("No approved transfers.")
         return
 
     df = pd.DataFrame(approved)
     st.dataframe(df)
 
     if st.button("Mark as Received"):
-        for req in st.session_state.transfer_requests:
-            if req["Status"] == "Approved":
-                req["Status"] = "Received"
+        for r in st.session_state.transfer_requests:
+            if r["Status"] == "Approved":
+                r["Status"] = "Received"
         save_transfer_requests()
         st.success("All approved transfers marked as received.")
         st.rerun()
+
 # Main App Routing
 if not st.session_state.logged_in:
     login()
 else:
-    page = sidebar()
+    page_query = st.experimental_get_query_params().get("page", [None])[0]
+    page = sidebar() if not page_query else page_query
+
     if page == "Dashboard":
         dashboard()
     elif page == "Upload Inventory":
