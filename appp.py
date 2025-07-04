@@ -54,19 +54,32 @@ def sidebar():
         st.markdown(f"**Role:** {st.session_state.role}")
         if st.session_state.user_store:
             st.markdown(f"**Store:** {st.session_state.user_store}")
-        nav = st.radio("Navigate", [
+
+        pages = [
             "Dashboard",
             "Upload Inventory",
             "Transfer Suggestions",
             "Submit Transfer",
             "Approvals",
             "Receive Inventory"
-        ])
+        ]
+
+        # Get query param page
+        selected_page = st.query_params.get("page", [pages[0]])[0]
+
+        # Use it as default value for radio
+        nav = st.radio("Navigate", pages, index=pages.index(selected_page))
+
+        # Keep query param in sync
+        st.query_params["page"] = [nav]
+
         if st.button("Logout 🔓"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
+
         return nav
+
 
 def upload_inventory():
     st.subheader("Upload Inventory and Sales Data")
@@ -203,8 +216,7 @@ def receive_inventory():
 if not st.session_state.logged_in:
     login()
 else:
-    page_query = st.query_params.get("page", [None])[0]
-    page = sidebar() if not page_query else page_query
+    page = sidebar()
 
     if page == "Dashboard":
         dashboard()
