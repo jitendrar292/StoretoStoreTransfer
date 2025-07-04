@@ -102,16 +102,40 @@ def upload_inventory():
         merged_df = pd.merge(inv_df, sales_df, on=["Store", "SKU"], how="left")
         merged_df["Sales Last Week"].fillna(0, inplace=True)
         st.session_state.inventory_data = merged_df
+
+        # Add dummy transfer data if none exist
+        if not st.session_state.transfer_requests:
+            st.session_state.transfer_requests = [
+                {"SKU": "SKU001", "Qty": 5, "From": "Store A", "To": "Store B", "Status": "Pending", "Product": "Shoes", "Submitted At": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+                {"SKU": "SKU002", "Qty": 10, "From": "Store B", "To": "Store C", "Status": "Approved", "Product": "T-Shirt", "Submitted At": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+                {"SKU": "SKU003", "Qty": 8, "From": "Store C", "To": "Store A", "Status": "Received", "Product": "Socks", "Submitted At": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+                {"SKU": "SKU004", "Qty": 4, "From": "Store A", "To": "Store C", "Status": "In Transit", "Product": "Cap", "Submitted At": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+            ]
+            save_transfer_requests()
         st.success("Inventory and sales data uploaded & merged successfully.")
         st.dataframe(merged_df)
 
 def dashboard():
     st.subheader("Dashboard")
     if st.session_state.inventory_data.empty:
+    st.info("Waiting for inventory upload from manager.")
+    if st.session_state.transfer_requests:
+        df_transfers = pd.DataFrame(st.session_state.transfer_requests)
+        st.write("### Transfer Request Status Summary")
+        status_counts = df_transfers['Status'].value_counts()
+        st.bar_chart(status_counts)
+    return
         st.warning("Upload inventory data first.")
         return
     st.write("### Inventory Overview")
     st.dataframe(st.session_state.inventory_data)
+
+    # Show status counts
+    if st.session_state.transfer_requests:
+        df_transfers = pd.DataFrame(st.session_state.transfer_requests)
+        status_counts = df_transfers['Status'].value_counts()
+        st.write("### Transfer Request Status Summary")
+        st.bar_chart(status_counts)
 
 def transfer_suggestions():
     st.subheader("Smart Transfer Suggestions")
@@ -205,6 +229,28 @@ def receive_inventory():
     df = pd.DataFrame(approved)
     st.dataframe(df)
     if st.button("Mark as Received"):
+        for r in st.session_state.transfer_requests:
+            if r["Status"] == "Approved" and r["To"] == st.session_state.user_store:
+                r["Status"] = "Received"
+                # Update inventory if store matches
+                match = (st.session_state.inventory_data["Store"] == r["To"]) & (st.session_state.inventory_data["SKU"] == r["SKU"])
+                if match.any():
+                    st.session_state.inventory_data.loc[match, "Stock Qty"] += int(r["Qty"])
+                else:
+                    # Add new row if SKU not found in inventory
+                    st.session_state.inventory_data = pd.concat([
+                        st.session_state.inventory_data,
+                        pd.DataFrame([{
+                            "Store": r["To"],
+                            "SKU": r["SKU"],
+                            "Product": r["Product"],
+                            "Stock Qty": int(r["Qty"]),
+                            "Sales Last Week": 0
+                        }])
+                    ], ignore_index=True)
+        save_transfer_requests()
+        st.success("Received inventory updated.")
+        st.rerun()
         for r in st.session_state.transfer_requests:
             if r["Status"] == "Approved":
                 r["Status"] = "Received"
