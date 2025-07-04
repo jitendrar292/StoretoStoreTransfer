@@ -35,7 +35,16 @@ def save_transfer_requests():
     df = pd.DataFrame(st.session_state.transfer_requests)
     df.to_csv(TRANSFER_FILE, index=False)
 
+
 def login():
+    # Try auto-login via query param
+    saved_email = st.query_params.get("user", [None])[0]
+    if saved_email in users:
+        st.session_state.logged_in = True
+        st.session_state.role = users[saved_email]["role"]
+        st.session_state.user_store = users[saved_email].get("store", None)
+        return
+
     st.title("Adidas Store-to-Store Transfers")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
@@ -45,6 +54,8 @@ def login():
             st.session_state.logged_in = True
             st.session_state.role = user["role"]
             st.session_state.user_store = user.get("store", None)
+            st.query_params["user"] = [email]
+            st.rerun()
         else:
             st.error("Invalid credentials")
 
